@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<!-- 不写 maximum-scale：锁缩放是 WCAG 违规。输入框用 16px 来避免 iOS 自动放大 -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<!-- 服务端在返回首页时把本次进程的 CSRF token 替换进来 -->
+<meta name="csrf-token" content="__CSRF_TOKEN__">
+<title>Port Visualizer</title>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="/src/main.jsx"></script>
+</body>
+</html>

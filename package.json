@@ -1,0 +1,63 @@
+{
+  "name": "port-visualizer",
+  "version": "1.0.0",
+  "description": "See who's holding a port on your machine, and kill it safely — every port comes with what it is, what breaks if you kill it, and why. 看清谁占了本机端口，并安全地终止它。",
+  "main": "server/app.js",
+  "scripts": {
+    "start": "node bin/port-visualizer.js",
+    "dev": "node --watch bin/port-visualizer.js --no-open",
+    "dev:web": "vite --config vite.config.mjs",
+    "build": "vite build --config vite.config.mjs",
+    "pretest": "npm run build",
+    "test": "node --test test/*.test.js",
+    "prepublishOnly": "npm test"
+  },
+  "keywords": [
+    "port",
+    "ports",
+    "lsof",
+    "netstat",
+    "kill",
+    "process",
+    "developer-tools",
+    "cli",
+    "eaddrinuse"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@heroui/react": "^3.2.3",
+    "@heroui/styles": "^3.2.3",
+    "@tailwindcss/vite": "^4.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "jsdom": "^25.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^4.0.0",
+    "vite": "^6.0.0"
+  },
+  "bin": {
+    "port-visualizer": "bin/port-visualizer.js"
+  },
+  "files": [
+    "bin/",
+    "server/",
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/edwardzhengif/port-visualizer.git"
+  },
+  "author": "Edward Zheng",
+  "homepage": "https://github.com/edwardzhengif/port-visualizer#readme",
+  "bugs": {
+    "url": "https://github.com/edwardzhengif/port-visualizer/issues"
+  }
+}

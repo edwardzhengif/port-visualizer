@@ -1,0 +1,150 @@
+name: CI
+
+# 这套 CI 存在的唯一理由，是它能告诉我们一些**在本地无法知道的事**。
+#
+# 主要就是 Windows：scanner.js 里有约 100 行 netstat / tasklist / PowerShell 代码，
+# 只有一个字符串 fixture 测试覆盖，从来没有在真正的 Windows 上跑过一次，
+# 而 README 已经写着「支持 Windows」。要么验证它，要么别承诺 —— 这是第三条路。
+#
+# macOS 与 Linux 那两格信息量小得多（作者有 Mac，Linux 已手工验过），
+# 但矩阵里顺带跑掉它们的成本接近零，就留着当回归网。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # 依赖会自己腐烂 —— 每周空跑一次，能在没人改代码时也发现「外部世界变了」
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+# 同一分支的旧任务在新提交推上来时直接取消，别排队烧额度
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # 一格红了要让其余继续跑完 —— 否则只能看到「第一个失败」，
+      # 判断不出是某个平台特有的问题，还是所有平台都挂
+      fail-fast: false
+      matrix:
+        include:
+          # 注意：这里**没有 Node 18**。
+          # Tailwind v4 的原生绑定 @tailwindcss/oxide 要求 Node >= 20，所以
+          # 「从源码构建」在 18 上跑不了 —— 但那只影响开发者，不影响用户：
+          # 用户拿到的是预构建的 dist/，运行时只需要 express。
+          # engines 声明的 >=18 由下面的 runtime job 单独验证。
+          - { os: ubuntu-latest,  node: 20 }
+          - { os: ubuntu-latest,  node: 22 }
+          - { os: ubuntu-latest,  node: 24 }
+          - { os: macos-latest,   node: 22 }
+          - { os: windows-latest, node: 22 }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # ci 而不是 install：严格按锁文件装，锁文件与 package.json 不一致时直接失败。
+      # 这也是「本地能跑、CI 挂了」这类问题最常见的根因所在，值得让它显式暴露。
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # browser.test.js 加载的是 dist/ 里的真实产物，所以必须先 build。
+      # 它和 cli.test.js 一起，是唯一真正跑过平台相关代码的两层：
+      # cli.test.js 会起一个真服务并请求 /api/ports，在 Windows 上
+      # 这一步会真的执行 netstat + tasklist + PowerShell。
+      - name: Test
+        run: npm test
+
+      # 只审运行时依赖。devDependencies 的告警数量大、且绝大多数
+      # 影响不到用户（它们不进包，也不在用户机器上执行），
+      # 让那些噪音把 CI 染红，结果就是所有人开始无视 CI。
+      #
+      # continue-on-error 不是偷懒：npm audit 依赖 registry 的一个远程端点，
+      # 实测遇到过它直接返回错误。**一个会因为别人家服务抖动而变红的 CI，
+      # 教给所有人的唯一一件事就是「红了也没关系」** —— 那比没有 CI 更糟。
+      # 真正的依赖安全由 Dependabot 兜底，它跑在 GitHub 侧，不依赖这个端点。
+      - name: Audit runtime dependencies
+        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=high
+
+  runtime:
+    name: Runtime on Node 18 (engines floor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 先用 Node 22 构建并打包 —— 构建需要 Node >= 20（Tailwind 的原生绑定）
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run build
+      - run: npm pack
+
+      # 再切到 engines 声明的下限，装 tarball 跑一遍。
+      # 这才是 Node 18 用户的真实路径：他们从不构建，只运行预构建产物。
+      # 声明了 >=18 却从不在 18 上验证，等于把承诺交给运气。
+      - uses: actions/setup-node@v4
+        with: { node-version: 18 }
+      - name: Install the tarball like a real user
+        run: |
+          mkdir -p /tmp/consumer && cd /tmp/consumer
+          npm init -y >/dev/null
+          npm install "$GITHUB_WORKSPACE"/port-visualizer-*.tgz
+      - name: It must actually start and serve
+        run: |
+          cd /tmp/consumer
+          ./node_modules/.bin/port-visualizer --version
+          ./node_modules/.bin/port-visualizer --no-open -p 4910 &
+          for i in $(seq 1 20); do sleep 0.5; curl -sf http://127.0.0.1:4910/ >/dev/null && break; done
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4910/)
+          api=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4910/api/ports)
+          echo "index=$code  api=$api"
+          [ "$code" = 200 ] && [ "$api" = 200 ] || { echo "::error::Node 18 上跑不起来，engines 的承诺不成立"; exit 1; }
+
+  package:
+    name: Package contents
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      # 发布是不可逆的。多发一个文件（.env、密钥、个人路径）没法撤回，
+      # 所以在每个 PR 上就把「这次会发出去什么」打印出来，让它可被审阅。
+      - name: Show what would be published
+        run: npm pack --dry-run
+
+      - name: Assert the tarball has no surprises
+        shell: bash
+        run: |
+          files=$(npm pack --dry-run --json | node -e "
+            let s='';process.stdin.on('data',c=>s+=c).on('end',()=>
+              console.log(JSON.parse(s)[0].files.map(f=>f.path).join('\n')))")
+          echo "$files"
+          # 白名单之外的东西一律视为事故
+          if echo "$files" | grep -vE '^(bin/|server/|dist/|README|LICENSE|package\.json)'; then
+            echo "::error::包里出现了 files 白名单之外的文件"
+            exit 1
+          fi
+          # dist/ 必须在 —— 它被 gitignore 了，最容易连带被 npmignore 掉，
+          # 结果用户装上打开是 404
+          echo "$files" | grep -q '^dist/index.html$' || {
+            echo "::error::dist/ 没有进包，用户装上会打不开页面"; exit 1; }

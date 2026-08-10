@@ -1,0 +1,33 @@
+version: 2
+
+# 依赖更新每月一批，不是每天一个 PR。
+#
+# 每天推 PR 的 Dependabot 最后一定会被无视，而被无视的告警等于没有告警。
+# 每月一次的量级是「你会真的看一眼」的量级 —— 这才是它有价值的前提。
+# 安全更新不受这个节奏限制，GitHub 会单独即时推送。
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    groups:
+      # 构建工具链一起升。它们本来就互相绑定（vite / rollup / tailwind），
+      # 拆成一堆单独 PR 只会互相冲突，谁也合不进去
+      build-toolchain:
+        patterns:
+          - 'vite'
+          - '@vitejs/*'
+          - 'tailwindcss'
+          - '@tailwindcss/*'
+      # 运行时依赖只有 express 一个，单独一条 —— 它是唯一会跑在用户机器上的东西，
+      # 值得单独看一眼再合
+      runtime:
+        patterns:
+          - 'express'
+
+  # workflow 里的 action 也会过期，且它们能读到仓库权限，同样需要跟进
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
