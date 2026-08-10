@@ -101,8 +101,8 @@ dist/index.html  dist/assets/*.css  dist/assets/*.js
 ### 3. 本地装一遍，像真实用户那样
 
 ```bash
-npm pack                                  # 生成 port-visualizer-1.0.0.tgz
-cd /tmp && npm install -g /完整路径/port-visualizer-1.0.0.tgz
+npm pack                                  # 生成 port-visualizer-<版本>.tgz
+cd /tmp && npm install -g /完整路径/port-visualizer-<版本>.tgz
 port-visualizer --help                    # 能跑吗
 port-visualizer                           # 真的能起来吗
 npm uninstall -g port-visualizer          # 测完卸掉
@@ -267,7 +267,9 @@ git push -u origin main
 ## 七、常见问题
 
 **Q：发布之后能删掉吗？**
-72 小时内可以 `npm unpublish port-visualizer@1.0.0`。超过 72 小时，只有在「没有任何其它包依赖它」且「周下载量很低」时才可能删，否则得联系 npm 支持。实际操作中请当成**不可撤销**。替代方案是 `npm deprecate port-visualizer "已废弃，请改用 X"`，用户安装时会看到警告。
+72 小时内可以 `npm unpublish port-visualizer@<版本>`。超过 72 小时，只有在「没有任何其它包依赖它」且「周下载量很低」时才可能删，否则得联系 npm 支持。实际操作中请当成**不可撤销**。替代方案是 `npm deprecate port-visualizer "已废弃，请改用 X"`，用户安装时会看到警告。
+
+**注意**：撤包**不能**收回版本号 —— 撤掉的 `1.0.0` 永远不能再发一次，只能往上走 `1.0.1`。而且如果撤掉的是**唯一**版本，等于把整个包撤光，**24 小时内不能发任何新版本**。
 
 **Q：会有人乱改我的包吗？**
 不会。只有你的账号能发布这个包名下的新版本。别人可以 fork 代码、可以发一个不同名字的包，但动不了你的。**前提是你的账号没被盗**——这就是为什么要开 2FA。
