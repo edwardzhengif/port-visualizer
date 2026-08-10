@@ -1,0 +1,217 @@
+/* 导入顺序不能改：tailwind 先来，heroui 的组件样式依赖它的 @theme 变量 */
+@import "tailwindcss";
+@import "@heroui/styles";
+
+/* ==========================================================================
+   应用层令牌
+   HeroUI 已经提供了 --background / --foreground / --surface-* / --accent 等，
+   这里只补它没有的：风险四档配色，以及悬浮胶囊的动效参数。
+   ========================================================================== */
+
+@theme {
+  /* 风险四档色相刻意拉开：红 25 → 橙 55 → 琥珀 88 → 绿 150。
+     四档之间的感知差足够大，且每档都配文字标签，不单靠颜色传达。
+
+     这里给的是**亮色模式**的值：文字要压暗才在浅底上读得清，底色要提亮成淡色调。
+     深色模式的值在下面的 .dark 里覆盖。 */
+  --color-risk-critical: oklch(0.505 0.190 25);
+  --color-risk-high:     oklch(0.545 0.150 55);
+  --color-risk-medium:   oklch(0.545 0.125 88);
+  --color-risk-low:      oklch(0.480 0.128 150);
+
+  --color-risk-critical-bg: oklch(0.945 0.035 25);
+  --color-risk-high-bg:     oklch(0.950 0.040 55);
+  --color-risk-medium-bg:   oklch(0.955 0.045 88);
+  --color-risk-low-bg:      oklch(0.950 0.035 150);
+
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+               "Liberation Mono", "Noto Sans Mono CJK SC", monospace;
+
+  --ease-out-quint: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* 深色模式：文字提亮、底色压暗。
+   亮色的文字色直接搬到深色底上会糊，深色的底色搬到浅色底上会变成黑块 ——
+   两套值必须各自调，不能靠 opacity 之类的手段互相推导。 */
+.dark {
+  --color-risk-critical: oklch(0.660 0.185 25);
+  --color-risk-high:     oklch(0.735 0.150 55);
+  --color-risk-medium:   oklch(0.815 0.125 88);
+  --color-risk-low:      oklch(0.780 0.128 150);
+
+  --color-risk-critical-bg: oklch(0.288 0.075 25);
+  --color-risk-high-bg:     oklch(0.300 0.062 55);
+  --color-risk-medium-bg:   oklch(0.305 0.052 88);
+  --color-risk-low-bg:      oklch(0.290 0.050 150);
+}
+
+
+:root {
+  /* 悬浮胶囊占据的底部空间，列表底部要留出来，否则最后一张卡片会被压住 */
+  --dock-h: 96px;
+}
+
+/* color-scheme 决定滚动条、表单控件等原生 UI 的明暗，必须跟随主题 */
+html { color-scheme: light; }
+html.dark { color-scheme: dark; }
+
+body {
+  font-family: var(--font-mono);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* 宁可没有粗体，也不要浏览器伪造的糊粗体 */
+  font-synthesis: none;
+}
+
+/* [hidden] 在 UA 样式表里优先级最低，任何作者样式的 display 都会盖过它。
+   这里钉死语义 —— 上一版的视图切换按钮点了没反应正是栽在这一条。 */
+[hidden] { display: none !important; }
+
+/* 全局 reset 若把 margin 清零，会连 UA 给 <dialog> 的 margin:auto 一起干掉，
+   而原生 dialog 的居中完全依赖那一条。提前还回去。 */
+dialog { margin: auto; }
+
+/* 数字列等宽，刷新时不会左右抽搐 */
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* ------------------------------------------------------------ 悬浮胶囊 */
+/*
+ * 动效原则（animations / apple-design skill）：
+ *   · 只动 transform 与 opacity —— 走合成器，不触发布局
+ *   · 入场 ease-out，退场更快更轻（用户已经不看它了）
+ *   · 向下滚动收起、向上立刻回来
+ *   · 聚焦或有输出时永不隐藏，否则打字打一半被收走
+ */
+.dock {
+  position: fixed;
+  left: 50%;
+  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  z-index: 40;
+  width: min(680px, calc(100vw - 2rem));
+  translate: -50% 0;
+  transition: translate 220ms var(--ease-out-quint), opacity 220ms var(--ease-out-quint);
+}
+.dock[data-hidden="true"] {
+  translate: -50% calc(100% + 2rem);
+  opacity: 0;
+  transition: translate 150ms ease-in, opacity 150ms ease-in;
+}
+
+.dock__out {
+  max-height: min(38dvh, 320px);
+  overflow-y: auto;
+  transform-origin: bottom center;
+  transition: opacity 220ms var(--ease-out-quint),
+              translate 220ms var(--ease-out-quint),
+              scale 220ms var(--ease-out-quint);
+}
+.dock__out[data-enter] { opacity: 0; translate: 0 8px; scale: 0.98; }
+
+/*
+ * 胶囊本体。三栏 grid：$ | 输入框 | 操作键。
+ *
+ * 单行形状写死在这里，而不是靠组件库选对某个布局变体 ——
+ * min-height 定住下限，align-items:end 保证内容长高时按钮贴着底边，
+ * 而不是浮在中间。这两条是「多行时也不难看」的关键。
+ */
+/*
+ * 这里只写**布局**，颜色一律交给 JSX 里的 Tailwind 工具类。
+ * 直接引 --color-* 变量看着更整洁，但那是在赌 HeroUI 的令牌名不会变；
+ * 工具类至少在构建期就能发现拼错。
+ */
+.capsule {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  /* end 而不是 center：内容长成多行时按钮贴着底边，而不是浮在中间 */
+  align-items: end;
+  gap: 0.5rem;
+  min-height: 48px;
+  padding: 0.5rem 0.625rem;
+  border-width: 1px;
+  /* 24px = 48px 高度的一半，单行时就是标准胶囊，长高后自然过渡成圆角矩形，
+     不需要用 :has() 去切换两套圆角 */
+  border-radius: 24px;
+}
+
+.capsule__start,
+.capsule__end {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  /* 固定 32px，和输入框首行（20px 行高 + 上下 6px 内边距）严丝合缝 */
+  height: 32px;
+}
+
+.capsule__input {
+  /* 16px 下限，否则 iOS 聚焦时会放大整页 */
+  font-size: 1rem;
+  line-height: 1.25rem;
+  padding-block: 0.375rem;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  resize: none;
+  overflow-y: auto;
+  max-height: 160px;
+  color: inherit;
+  font-family: inherit;
+}
+
+.capsule__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 尺寸固定，才能和左侧的 $ 上下对齐 */
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  font-size: 0.8125rem;
+  transition: background-color 150ms, color 150ms, filter 150ms;
+}
+
+/* ------------------------------------------------------------ 分段控件 */
+.seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-width: 1px;
+  border-radius: 0.625rem;
+}
+
+.seg__item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  min-height: 28px;
+  padding: 0 0.625rem;
+  border-radius: 0.4375rem;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  transition: background-color 150ms, color 150ms;
+}
+/* 只在键盘聚焦时画焦点环 —— 鼠标点完还留一圈是多余的视觉噪音 */
+.seg__item:focus-visible { outline: 2px solid currentColor; outline-offset: -1px; }
+
+/* 命令行可能长达数千字符。截断而不是给它内部滚动条 ——
+   卡片里再套一根滚动轴会和页面滚动打架。 */
+.clamp-4 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+.clamp-4[data-full="true"] { -webkit-line-clamp: unset; }
+
+/* --------------------------------------------------------- 减弱动效 */
+/* 每加一处动效就要配一条降级路径。位移正是引发前庭不适的部分。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .dock[data-hidden="true"] { translate: -50% 0; opacity: 0; pointer-events: none; }
+}
